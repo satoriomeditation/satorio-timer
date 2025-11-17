@@ -1,0 +1,7 @@
+// apps/web/src/supabaseClient.ts
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseUrl = 'https://rngsmmcxorlkjboitigb.supabase.co'
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJuZ3NtbWN4b3Jsa2pib2l0aWdiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwOTY1MDksImV4cCI6MjA3ODY3MjUwOX0.80RI3IbY5FO88Gfw-5YZVzwgaJra68AqAa3Y2tVKwOA'
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey)
