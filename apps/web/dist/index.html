@@ -86,55 +86,6 @@
 }
 .profile-fab:active { transform: translateY(0); }
 
-
-
-.bmc-fab {
-  position: fixed;
-  left: 20px;
-  bottom: 20px;
-  width: 66px;
-  height: 66px;
-  border-radius: 999px;
-  background: transparent;
-  border: 1px solid rgba(255,255,255,.65);
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  transition: box-shadow .2s ease, transform .06s ease, background .2s ease, border-color .2s ease;
-  box-shadow: 0 6px 18px rgba(0,0,0,.25);
-  z-index: 30; /* above background, below modals */
-}
-
-.bmc-fab:hover {
-  border-color: white;
-  box-shadow: 0 10px 26px rgba(0,0,0,.32);
-  transform: translateY(-1px);
-  background: rgba(0,0,0,.35);
-}
-
-.bmc-fab:active {
-  transform: translateY(0);
-}
-
-
-.buy-coffee-fab {
-  position: fixed;
-  bottom: 20px;
-  left: 20px; /* mirror the profile button */
-  width: 55px;
-  height: 55px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(6px);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  display: grid;
-  place-items: center;
-  z-index: 30;
-  cursor: pointer;
-}
-
-
-
       .logo { width: 88px; height: 88px; opacity: .95; }
       @media (max-width: 480px){ .logo { width:72px; height:72px; } .btn-primary { min-width: 70vw; } }
 
@@ -419,10 +370,10 @@ input[type="range"].slider::-moz-range-thumb {
 
 
     </style>
+    <script type="module" crossorigin src="/assets/index-koUIDVST.js"></script>
   </head>
   <body>
     <div class="bg"></div>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

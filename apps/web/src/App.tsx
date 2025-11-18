@@ -1,3 +1,7 @@
+
+import BuyMeACoffeeButton from './components/BuyMeACoffeeButton';
+
+
 import React, { useEffect } from 'react'
 import Home from './pages/Home'
 import Meditate from './pages/Meditate'
@@ -703,6 +707,10 @@ export default function App() {
           </div>
         </div>
       )}
+
+ 
+          <BuyMeACoffeeButton />
+
 
       <div className="footer">© {new Date().getFullYear()} Meditation Timer</div>
     </>

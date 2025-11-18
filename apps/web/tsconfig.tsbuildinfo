@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/supabaseclient.ts","./src/lib/getmeditators.ts","./src/pages/discover.tsx","./src/pages/home.tsx","./src/pages/meditate.tsx","./src/pages/profile.tsx"],"version":"5.9.3"}

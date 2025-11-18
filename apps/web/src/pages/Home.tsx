@@ -1,5 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
+import BuyMeACoffeeWidget from '../components/BuyMeACoffeeWidget'
+import BuyMeACoffeeButton from '../components/BuyMeACoffeeButton'
+
 
 type HomeProps = {
   onMeditate: () => void
@@ -107,6 +110,12 @@ export default function Home({ onMeditate, onDiscover, onProfile }: HomeProps) {
       >
         <img src="/assets/profile.webp" alt="" width="38" height="38" />
       </button>
+
+
+
+
+
+
     </>
   )
 }
