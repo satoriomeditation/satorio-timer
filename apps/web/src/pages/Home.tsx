@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
-import BuyMeACoffeeWidget from '../components/BuyMeACoffeeWidget'
+
 import BuyMeACoffeeButton from '../components/BuyMeACoffeeButton'
 
 
