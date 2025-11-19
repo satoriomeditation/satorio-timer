@@ -62,9 +62,6 @@ function useBell() {
   return { prime, playBell, playIntro }
 }
 
-
-
-
 export default function Meditate({
   onBack,
   onProfile,
@@ -72,7 +69,6 @@ export default function Meditate({
   onBack: () => void
   onProfile: () => void
 }) {
-
   // remember last minutes (now 1..90)
   const [minutes, setMinutes] = useState<number>(() => {
     const saved = localStorage.getItem('lastMinutes')
@@ -80,7 +76,9 @@ export default function Meditate({
     return Math.min(90, Math.max(1, val))
   })
 
-  const [phase, setPhase] = useState<'select'|'preroll'|'running'|'done'>('select')
+  const [phase, setPhase] = useState<'select' | 'preroll' | 'running' | 'done'>(
+    'select'
+  )
   const [display, setDisplay] = useState<string>('00:10')
   const endEpochRef = useRef<number>(0)
 
@@ -90,6 +88,18 @@ export default function Meditate({
 
   const { prime, playBell, playIntro } = useBell()
 
+  // GUIDED MODE
+  const [showGuideModal, setShowGuideModal] = useState(false)
+  const [isGuided, setIsGuided] = useState(false)
+  const guideAudioRef = useRef<HTMLAudioElement | null>(null)
+
+  function stopGuideAudio() {
+    const a = guideAudioRef.current
+    if (a) {
+      a.pause()
+      a.currentTime = 0
+    }
+  }
 
   async function logSession(minutes: number) {
     if (minutes <= 0) return
@@ -103,7 +113,6 @@ export default function Meditate({
       }
 
       const user = userData.user
-
       const grains = minutes * 10
 
       const { error } = await supabase.from('sessions').insert({
@@ -119,10 +128,6 @@ export default function Meditate({
       console.error('Unexpected error logging session:', err)
     }
   }
-
-
-
-
 
   // keep accurate when tab sleeps
   useEffect(() => {
@@ -143,19 +148,34 @@ export default function Meditate({
         const cd = createCountdown(endEpochRef.current)
         const secs = cd.remainingSeconds()
         setDisplay(formatMMSS(secs))
+
         if (cd.isFinished()) {
           if (phase === 'preroll') {
             // transition to main timer
             setPhase('running')
             startMsRef.current = Date.now()
+
             // start bell
             playBell()
+
+            // start guided audio if any
+            if (isGuided && guideAudioRef.current) {
+              const a = guideAudioRef.current
+              a.currentTime = 0
+              a.play().catch(() => {
+                /* ignore autoplay failure */
+              })
+            }
+
             endEpochRef.current = Date.now() + minutes * 60_000
-                    } else {
+          } else {
             // natural completion
             const started = startMsRef.current ?? Date.now()
             const minsFloored = Math.floor((Date.now() - started) / 60000)
             setCompletedMins(minsFloored)
+
+            stopGuideAudio()
+
             if (minsFloored >= 1) {
               // log to Supabase (don’t await – fire and forget)
               logSession(minsFloored)
@@ -174,10 +194,14 @@ export default function Meditate({
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [phase, minutes, playBell, onBack])
+  }, [phase, minutes, playBell, onBack, isGuided])
 
-  function begin() {
+  // STANDARD SESSION
+  function beginStandard() {
     localStorage.setItem('lastMinutes', String(minutes))
+    setIsGuided(false)
+    guideAudioRef.current = null
+
     // prime audio on user gesture so bells are allowed later
     prime()
     // play intro sound once during the 10-second countdown
@@ -186,8 +210,24 @@ export default function Meditate({
     endEpochRef.current = Date.now() + 10_000
   }
 
+  // GUIDED SESSION
+  function beginGuidedSession(mins: number, src: string) {
+    setShowGuideModal(false)
+    localStorage.setItem('lastMinutes', String(mins))
+    setMinutes(mins)
+    setIsGuided(true)
+    guideAudioRef.current = new Audio(src)
+
+    prime()
+    playIntro()
+    setPhase('preroll')
+    endEpochRef.current = Date.now() + 10_000
+  }
+
   // user cancels early
-    function endSessionEarly() {
+  function endSessionEarly() {
+    stopGuideAudio()
+
     if (startMsRef.current) {
       const minsFloored = Math.floor((Date.now() - startMsRef.current) / 60000)
       setCompletedMins(minsFloored)
@@ -203,12 +243,13 @@ export default function Meditate({
     onBack()
   }
 
-
   function resetToSelect() {
     setPhase('select')
     setDisplay('00:10')
     startMsRef.current = null
     setCompletedMins(null)
+    setIsGuided(false)
+    stopGuideAudio()
   }
 
   // time shown while selecting (e.g., 20:00)
@@ -217,21 +258,55 @@ export default function Meditate({
   return (
     <>
       {/* Top-centered logo like Home */}
-      <div style={{position:'fixed', top:16, left:0, right:0, display:'grid', placeItems:'center', pointerEvents:'none', zIndex:1}}>
-        <img className="logo" src="/assets/meditationlogo.webp" alt="Logo" style={{pointerEvents:'auto'}} onClick={onBack} />
+      <div
+        style={{
+          position: 'fixed',
+          top: 16,
+          left: 0,
+          right: 0,
+          display: 'grid',
+          placeItems: 'center',
+          pointerEvents: 'none',
+          zIndex: 1,
+        }}
+      >
+        <img
+          className="logo"
+          src="/assets/meditationlogo.webp"
+          alt="Logo"
+          style={{ pointerEvents: 'auto' }}
+          onClick={onBack}
+        />
       </div>
 
-      <div className="card" style={{background:'rgba(0,0,0,.0)', border:'none', padding:'24px', width:'100%'}}>
+      <div
+        className="card"
+        style={{
+          background: 'rgba(0,0,0,.0)',
+          border: 'none',
+          padding: '24px',
+          width: '100%',
+        }}
+      >
         {phase === 'select' && (
           <>
-            <div style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
-              <div className="time-xl" aria-live="polite">{previewTime}</div>
+            <div
+              style={{ display: 'flex', justifyContent: 'center', width: '100%' }}
+            >
+              <div className="time-xl" aria-live="polite">
+                {previewTime}
+              </div>
             </div>
 
             <div className="spacer"></div>
-            <div className="subtitle" style={{textAlign:'center', fontWeight:500}}>Slide to how many minutes you want to meditate for</div>
+            <div
+              className="subtitle"
+              style={{ textAlign: 'center', fontWeight: 500 }}
+            >
+              Slide to how many minutes you want to meditate for
+            </div>
             <div className="spacer"></div>
-            <div style={{maxWidth:720, margin:'0 auto'}}>
+            <div style={{ maxWidth: 720, margin: '0 auto' }}>
               <input
                 className="slider"
                 type="range"
@@ -239,93 +314,242 @@ export default function Meditate({
                 max={90}
                 step={1}
                 value={minutes}
-                onChange={(e)=>setMinutes(Number(e.target.value))}
-                style={{
-                  '--slider-bg': `linear-gradient(90deg, 
+                onChange={(e) => setMinutes(Number(e.target.value))}
+                style={
+                  {
+                    '--slider-bg': `linear-gradient(90deg, 
                     var(--btn-from) 0%, 
                     var(--btn-to) ${(minutes / 90) * 100}%, 
                     rgba(255,255,255,.4) ${(minutes / 90) * 100}%, 
                     rgba(255,255,255,.4) 100%
-                  )`
-                } as React.CSSProperties}
+                  )`,
+                  } as React.CSSProperties
+                }
               />
             </div>
             <div className="spacer-lg"></div>
             <div className="spacer-lg"></div>
-            <div style={{display:'grid', placeItems:'center'}}>
-              <button className="btn-primary btn-lg" onClick={begin}>Meditate now</button>
+            <div style={{ display: 'grid', placeItems: 'center', gap: 12 }}>
+              <button className="btn-primary btn-lg" onClick={beginStandard}>
+                Meditate now
+              </button>
+
+              {/* Guided mode trigger */}
+              <button
+                className="btn-primary btn-lg"
+                onClick={() => setShowGuideModal(true)}
+                style={{
+                  background: '#84E291',
+                  borderColor: '#84E291',
+                  color: '#FFFFFF',
+                }}
+              >
+                Need a guide? 🗺️
+              </button>
             </div>
           </>
         )}
 
         {phase === 'preroll' && (
           <>
-            <div style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
-              <div className="time-xl" aria-live="polite">{display}</div>
+            <div
+              style={{ display: 'flex', justifyContent: 'center', width: '100%' }}
+            >
+              <div className="time-xl" aria-live="polite">
+                {display}
+              </div>
             </div>
             <div className="spacer"></div>
-            <div className="subtitle" style={{textAlign:'center'}}>Get comfortable, you are about to begin</div>
+            <div className="subtitle" style={{ textAlign: 'center' }}>
+              Get comfortable, you are about to begin
+            </div>
           </>
         )}
 
         {phase === 'running' && (
           <>
-            <div style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
-              <div className="time-xl" aria-live="polite">{display}</div>
+            <div
+              style={{ display: 'flex', justifyContent: 'center', width: '100%' }}
+            >
+              <div className="time-xl" aria-live="polite">
+                {display}
+              </div>
             </div>
             <div className="spacer-lg"></div>
-            <div style={{display:'grid', placeItems:'center'}}>
-              <button className="btn-secondary btn-lg" onClick={endSessionEarly}>End session</button>
+            <div style={{ display: 'grid', placeItems: 'center' }}>
+              <button className="btn-secondary btn-lg" onClick={endSessionEarly}>
+                End session
+              </button>
             </div>
           </>
         )}
 
         {phase === 'done' && (
-  <>
-    <div className="spacer"></div>
+          <>
+            <div className="spacer"></div>
 
-    {(() => {
-      const mins = Math.max(0, completedMins ?? 0)
-      const minuteWord = mins === 1 ? 'minute' : 'minutes'
-      const rice = mins * 10
-      const riceWord = rice === 1 ? 'grain' : 'grains'
+            {(() => {
+              const mins = Math.max(0, completedMins ?? 0)
+              const minuteWord = mins === 1 ? 'minute' : 'minutes'
+              const rice = mins * 10
+              const riceWord = rice === 1 ? 'grain' : 'grains'
 
-      return (
-        <div
-          className="title"
-          style={{ textAlign: 'center', fontSize: 20, marginBottom: 12 }}
-        >
-          Congratulations. You completed <strong>{mins} {minuteWord}</strong> of meditation
-          and donated <strong>{rice} {riceWord} of rice</strong>.
-        </div>
-      )
-    })()}
+              return (
+                <div
+                  className="title"
+                  style={{ textAlign: 'center', fontSize: 20, marginBottom: 12 }}
+                >
+                  Congratulations. You completed <strong>{mins} {minuteWord}</strong> of
+                  meditation and donated <strong>{rice} {riceWord} of rice</strong>.
+                </div>
+              )
+            })()}
 
-    <div className="spacer-lg"></div>
+            <div className="spacer-lg"></div>
 
-    <div style={{ display: 'grid', placeItems: 'center', gap: 12 }}>
-      <button className="btn-primary btn-lg" onClick={resetToSelect}>
-        New session
-      </button>
-      <button className="btn-secondary btn-lg" onClick={onBack}>
-        Back to Home
-      </button>
-    </div>
-  </>
-)}
-
+            <div
+              style={{ display: 'grid', placeItems: 'center', gap: 12 }}
+            >
+              <button className="btn-primary btn-lg" onClick={resetToSelect}>
+                New session
+              </button>
+              <button className="btn-secondary btn-lg" onClick={onBack}>
+                Back to Home
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Profile button like Home */}
       <button
-  className="profile-fab"
-  onClick={onProfile}
-  title="Profile"
-  aria-label="Open profile"
->
-  <img src="/assets/profile.webp" alt="" width="38" height="38" />
-</button>
+        className="profile-fab"
+        onClick={onProfile}
+        title="Profile"
+        aria-label="Open profile"
+      >
+        <img src="/assets/profile.webp" alt="" width="38" height="38" />
+      </button>
 
+      {/* GUIDED MODE MODAL */}
+      {showGuideModal && (
+        <div
+          onClick={() => setShowGuideModal(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.55)',
+            display: 'grid',
+            placeItems: 'center',
+            zIndex: 70,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: 720,
+              width: '90%',
+              background: 'rgba(15,23,42,0.98)',
+              borderRadius: 18,
+              padding: '32px 28px 28px',
+              border: '1px solid rgba(255,255,255,0.14)',
+              boxShadow: '0 18px 50px rgba(0,0,0,0.6)',
+              boxSizing: 'border-box',
+              textAlign: 'center',
+            }}
+          >
+            <div
+              className="title"
+              style={{
+                fontSize: 32,
+                fontWeight: 600,
+                marginBottom: 12,
+              }}
+            >
+              Guided Mode
+            </div>
+            <p
+              className="subtitle"
+              style={{
+                fontSize: 16,
+                lineHeight: 1.5,
+                marginBottom: 24,
+              }}
+            >
+              Whether you're new to meditation, or simply in need of a refresh, here's a simple way
+              to ease into your session. Pick the length you want, and we will
+              guide you from the very first breath.
+            </p>
+
+            <div
+              style={{
+                display: 'grid',
+                gap: 12,
+                maxWidth: 260,
+                margin: '0 auto 20px',
+              }}
+            >
+              <button
+                className="btn-primary btn-lg"
+                style={{
+                  background: '#84E291',
+                  borderColor: '#84E291',
+                  color: '#FFFFFF',
+                }}
+                onClick={() =>
+                  beginGuidedSession(
+                    2,
+                    '/assets/satorio_timer_guide_2mins.mp3'
+                  )
+                }
+              >
+                2 Minutes
+              </button>
+              <button
+                className="btn-primary btn-lg"
+                style={{
+                  background: '#84E291',
+                  borderColor: '#84E291',
+                  color: '#FFFFFF',
+                }}
+                onClick={() =>
+                  beginGuidedSession(
+                    5,
+                    '/assets/satorio_timer_guide_5mins.mp3'
+                  )
+                }
+              >
+                5 Minutes
+              </button>
+              <button
+                className="btn-primary btn-lg"
+                style={{
+                  background: '#84E291',
+                  borderColor: '#84E291',
+                  color: '#FFFFFF',
+                }}
+                onClick={() =>
+                  beginGuidedSession(
+                    10,
+                    '/assets/satorio_timer_guide_10mins.mp3'
+                  )
+                }
+              >
+                10 Minutes
+              </button>
+            </div>
+
+            <button
+              className="btn-secondary btn-lg"
+              type="button"
+              onClick={() => setShowGuideModal(false)}
+              style={{ minWidth: 180, fontSize: 16 }}
+            >
+              Go Back
+            </button>
+          </div>
+        </div>
+      )}
     </>
   )
 }
