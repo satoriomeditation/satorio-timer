@@ -65,9 +65,11 @@ function useBell() {
 export default function Meditate({
   onBack,
   onProfile,
+  onCompletedLoggedOut,
 }: {
   onBack: () => void
   onProfile: () => void
+  onCompletedLoggedOut?: () => void
 }) {
   // remember last minutes (now 1..90)
   const [minutes, setMinutes] = useState<number>(() => {
@@ -87,6 +89,26 @@ export default function Meditate({
   const [completedMins, setCompletedMins] = useState<number | null>(null)
 
   const { prime, playBell, playIntro } = useBell()
+
+  // is user logged in?
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    supabase.auth
+      .getUser()
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (!error && data.user) setIsLoggedIn(true)
+        else setIsLoggedIn(false)
+      })
+      .catch(() => {
+        if (!cancelled) setIsLoggedIn(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // GUIDED MODE
   const [showGuideModal, setShowGuideModal] = useState(false)
@@ -182,6 +204,11 @@ export default function Meditate({
 
               setPhase('done')
               playBell() // end bell
+
+              // if not logged in, notify parent so it can show signup popup
+              if (!isLoggedIn && typeof onCompletedLoggedOut === 'function') {
+                onCompletedLoggedOut()
+              }
             } else {
               onBack() // less than 1 minute -> go home
             }
@@ -193,8 +220,10 @@ export default function Meditate({
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
-  }, [phase, minutes, playBell, onBack, isGuided])
+    return () => {
+      cancelAnimationFrame(raf)
+    }
+  }, [phase, minutes, playBell, onBack, isGuided, isLoggedIn, onCompletedLoggedOut])
 
   // STANDARD SESSION
   function beginStandard() {
@@ -553,4 +582,5 @@ export default function Meditate({
     </>
   )
 }
+
 

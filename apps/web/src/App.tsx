@@ -1,111 +1,175 @@
-
 import BuyMeACoffeeButton from './components/BuyMeACoffeeButton';
+import React, { useEffect } from 'react';
+import Home from './pages/Home';
+import Meditate from './pages/Meditate';
+import Discover from './pages/Discover';
+import Profile from './pages/Profile';
+import Terms from './pages/Terms';
+import Privacy from './pages/Privacy';
+import Welcome from './pages/Welcome';
+import { supabase } from './supabaseClient';
 
+type Route =
+  | 'home'
+  | 'meditate'
+  | 'discover'
+  | 'profile'
+  | 'terms'
+  | 'privacy'
+  | 'welcome'
+  | 'email-confirmed';
 
-import React, { useEffect } from 'react'
-import Home from './pages/Home'
-import Meditate from './pages/Meditate'
-import Discover from './pages/Discover'
-import Profile from './pages/Profile'
-import { supabase } from './supabaseClient'
-
-type Route = 'home' | 'meditate' | 'discover' | 'profile'
+// very simple email check for nicer client-side errors
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function useHashRoute(): [Route, (r: Route) => void] {
   const [route, setRoute] = React.useState<Route>(
-    () => (location.hash.replace('#/', '') as Route) || 'home'
-  )
+    () => ((location.hash.replace('#/', '') as Route) || 'home')
+  );
 
   React.useEffect(() => {
     const onHash = () => {
-      const r = (location.hash.replace('#/', '') as Route) || 'home'
-      setRoute(r)
-    }
-    window.addEventListener('hashchange', onHash)
-    return () => window.removeEventListener('hashchange', onHash)
-  }, [])
+      const r = (location.hash.replace('#/', '') as Route) || 'home';
+      setRoute(r);
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
 
   const nav = (r: Route) => {
-    location.hash = `/${r}`
-  }
+    location.hash = `/${r}`;
+  };
 
-  return [route, nav]
+  return [route, nav];
 }
 
 export default function App() {
-  const [route, nav] = useHashRoute()
+  const [route, nav] = useHashRoute();
 
   // “not signed up yet” popup flag (first CTA popup)
-  const [showSignup, setShowSignup] = React.useState(false)
+  const [showSignup, setShowSignup] = React.useState(false);
 
   // Auth modal (actual signup / login / reset form)
-  const [showAuth, setShowAuth] = React.useState(false)
-  const [authMode, setAuthMode] = React.useState<'signup' | 'login' | 'reset'>('signup')
+  const [showAuth, setShowAuth] = React.useState(false);
+  const [authMode, setAuthMode] = React.useState<'signup' | 'login' | 'reset'>(
+    'signup'
+  );
+
+  // Human-confirmation step
+  const [showHumanCheck, setShowHumanCheck] = React.useState(false);
+  const [pendingAuthMode, setPendingAuthMode] = React.useState<
+    'signup' | 'login'
+  >('signup');
+  const [humanChecked, setHumanChecked] = React.useState(false);
 
   // Form state
-  const [firstName, setFirstName] = React.useState('')
-  const [email, setEmail] = React.useState('')
-  const [password, setPassword] = React.useState('')
-  const [showPassword, setShowPassword] = React.useState(false)
-  const [agreeTerms, setAgreeTerms] = React.useState(false)
+  const [firstName, setFirstName] = React.useState('');
+  const [email, setEmail] = React.useState('');
+  const [password, setPassword] = React.useState('');
+  const [showPassword, setShowPassword] = React.useState(false);
+  const [agreeTerms, setAgreeTerms] = React.useState(false);
 
-  const [authError, setAuthError] = React.useState<string | null>(null)
-  const [authLoading, setAuthLoading] = React.useState(false)
+  const [authError, setAuthError] = React.useState<string | null>(null);
+  const [authLoading, setAuthLoading] = React.useState(false);
+
+  // Field-level errors for nicer styling
+  const [fieldErrors, setFieldErrors] = React.useState<{
+    firstName?: string;
+    email?: string;
+    password?: string;
+  }>({});
 
   // Keep UI in sync with Supabase session
   useEffect(() => {
     supabase.auth.onAuthStateChange((_event, session) => {
       if (!session && route === 'profile') {
-        setShowAuth(true)
-        setAuthMode('login')
+        setAuthMode('login');
+        setShowAuth(true);
       }
-    })
-  }, [route])
+    });
+  }, [route]);
 
   // Close popups with Escape key
   React.useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
-        setShowSignup(false)
-        setShowAuth(false)
+        setShowSignup(false);
+        setShowAuth(false);
+        setShowHumanCheck(false);
       }
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  function resetErrors() {
+    setAuthError(null);
+    setFieldErrors({});
+  }
+
+  // Open login/signup flow but route through "I'm human" first
+  function openAuthWithHuman(target: 'signup' | 'login') {
+    resetErrors();
+    setPendingAuthMode(target);
+    setHumanChecked(false);
+    setShowSignup(false);
+    setShowHumanCheck(true);
+  }
+
+  function proceedFromHumanCheck() {
+    setShowHumanCheck(false);
+    setAuthMode(pendingAuthMode);
+    setShowAuth(true);
+  }
 
   // SIGN UP with Supabase
   async function handleSignupSubmit(e: React.FormEvent) {
-    e.preventDefault()
+    e.preventDefault();
+    resetErrors();
 
-    if (!agreeTerms) {
-      alert('Please agree to the Terms & Conditions first.')
-      return
+    const errors: typeof fieldErrors = {};
+
+    if (!firstName.trim()) {
+      errors.firstName = 'Please enter your first name.';
     }
 
-    setAuthError(null)
-    setAuthLoading(true)
+    if (!EMAIL_RE.test(email)) {
+      errors.email = 'That email address doesn’t look right';
+    }
+
+    if (password.length < 8) {
+      errors.password = 'Your password must be at least 8 characters';
+    }
+
+    if (!agreeTerms) {
+      setAuthError('Please agree to the Terms & Conditions to continue.');
+    }
+
+    if (Object.keys(errors).length > 0 || !agreeTerms) {
+      setFieldErrors(errors);
+      return;
+    }
+
+    setAuthLoading(true);
 
     try {
       // 1) Create auth user (email + password)
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
-      })
+      });
 
       if (error) {
-        console.error('Signup error:', error)
-        setAuthError(error.message)
-        alert(error.message)
-        return
+        console.error('Signup error:', error);
+        setAuthError(error.message);
+        return;
       }
 
-      const user = data.user
+      const user = data.user;
       if (!user) {
-        const msg = 'Signup succeeded but no user returned — please try again.'
-        setAuthError(msg)
-        alert(msg)
-        return
+        const msg = 'Signup succeeded but no user returned — please try again.';
+        setAuthError(msg);
+        return;
       }
 
       // 2) Create / update profile row
@@ -118,78 +182,119 @@ export default function App() {
             email: email,
           },
           { onConflict: 'id' }
-        )
+        );
 
       if (profileError) {
-        console.error('Profile upsert error:', profileError)
-        setAuthError(profileError.message)
-        alert('Account created, but there was a problem saving your profile.')
+        console.error('Profile upsert error:', profileError);
+        setAuthError('Account created, but there was a problem saving your profile.');
       } else {
-        setAuthError(null)
+        setAuthError(null);
       }
 
-      // 3) Close modal & go to profile
-      setShowAuth(false)
-      setShowSignup(false)
-      nav('profile')
+      // 3) Close modal & go to WELCOME page
+      setShowAuth(false);
+      setShowSignup(false);
+      nav('welcome');
     } finally {
-      setAuthLoading(false)
+      setAuthLoading(false);
     }
   }
 
   // LOG IN with Supabase
   async function handleLoginSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setAuthError(null)
-    setAuthLoading(true)
+    e.preventDefault();
+    resetErrors();
+
+    const errors: typeof fieldErrors = {};
+    if (!EMAIL_RE.test(email)) {
+      errors.email = 'That email address doesn’t look right';
+    }
+    if (!password) {
+      errors.password = 'Please enter your password.';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      return;
+    }
+
+    setAuthLoading(true);
 
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
-      })
+      });
 
       if (error) {
-        console.error('Login error:', error)
-        setAuthError(error.message)
-        return
+        console.error('Login error:', error);
+        setAuthError(error.message);
+        return;
       }
 
-      console.log('Login OK:', data)
-      setShowAuth(false)
-      setShowSignup(false)
-      setPassword('')
-      nav('profile')
+      console.log('Login OK:', data);
+      setShowAuth(false);
+      setShowSignup(false);
+      setPassword('');
+      nav('profile');
     } catch (err) {
-      console.error('Unexpected login error:', err)
-      setAuthError('Unexpected error while logging in. Please try again.')
+      console.error('Unexpected login error:', err);
+      setAuthError('Unexpected error while logging in. Please try again.');
     } finally {
-      setAuthLoading(false)
+      setAuthLoading(false);
     }
   }
 
   // RESET PASSWORD (send email)
   async function handleResetSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setAuthError(null)
-    setAuthLoading(true)
+    e.preventDefault();
+    resetErrors();
+
+    const errors: typeof fieldErrors = {};
+    if (!EMAIL_RE.test(email)) {
+      errors.email = 'That email address doesn’t look right';
+    }
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      return;
+    }
+
+    setAuthLoading(true);
 
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email)
+      const { error } = await supabase.auth.resetPasswordForEmail(email);
 
       if (error) {
-        console.error('Reset password error:', error)
-        setAuthError(error.message)
-        return
+        console.error('Reset password error:', error);
+        setAuthError(error.message);
+        return;
       }
 
-      alert('Password reset email sent. Please check your inbox.')
-      setShowAuth(false)
+      alert('Password reset email sent. Please check your inbox.');
+      setShowAuth(false);
     } catch (err) {
-      console.error('Unexpected reset error:', err)
-      setAuthError('Unexpected error while sending reset email. Please try again.')
+      console.error('Unexpected reset error:', err);
+      setAuthError('Unexpected error while sending reset email. Please try again.');
     } finally {
-      setAuthLoading(false)
+      setAuthLoading(false);
+    }
+  }
+
+  // Social login – works once providers are configured in Supabase
+  async function handleSocialLogin(provider: 'google' | 'facebook' | 'apple') {
+    resetErrors();
+    setAuthLoading(true);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({ provider });
+      if (error) {
+        console.error('Social login error:', error);
+        setAuthError(error.message);
+      }
+    } catch (err) {
+      console.error('Unexpected social login error:', err);
+      setAuthError('Unexpected error while logging in. Please try again.');
+    } finally {
+      setAuthLoading(false);
     }
   }
 
@@ -209,13 +314,20 @@ export default function App() {
 
       {/* MEDITATE */}
       {route === 'meditate' && (
-        <div className="container">
-          <Meditate
-            onBack={() => nav('home')}
-            onProfile={() => setShowSignup(true)}
-          />
-        </div>
-      )}
+  	<div className="container">
+	    <Meditate
+	      onBack={() => nav('home')}
+	      onProfile={() => setShowSignup(true)}
+	      onCompletedLoggedOut={() => {
+	        // open signup popup 5 seconds after a logged-out session completes
+	        setTimeout(() => {
+	          setShowSignup(true)
+	        }, 5000)
+	      }}
+	    />
+	  </div>
+	)}
+
 
       {/* DISCOVER */}
       {route === 'discover' && (
@@ -226,6 +338,30 @@ export default function App() {
 
       {/* PROFILE PAGE */}
       {route === 'profile' && <Profile onBack={() => nav('home')} />}
+
+      {/* TERMS PAGE */}
+      {route === 'terms' && (
+        <div className="container">
+          <Terms onBack={() => nav('home')} />
+        </div>
+      )}
+
+      {/* PRIVACY PAGE */}
+      {route === 'privacy' && (
+        <div className="container">
+          <Privacy onBack={() => nav('home')} />
+        </div>
+      )}
+
+      {/* WELCOME PAGE (after signup) */}
+      {route === 'welcome' && (
+        <div className="container">
+          <Welcome
+            onGoToProfile={() => nav('profile')}
+            onBackHome={() => nav('home')}
+          />
+        </div>
+      )}
 
       {/* 1) SIGNUP CTA POPUP (Create a calmer, kinder world) */}
       {showSignup && (
@@ -253,8 +389,28 @@ export default function App() {
               border: '1px solid rgba(255,255,255,0.14)',
               boxShadow: '0 18px 50px rgba(0,0,0,0.6)',
               boxSizing: 'border-box',
+              position: 'relative',
             }}
           >
+            {/* X close */}
+            <button
+              type="button"
+              onClick={() => setShowSignup(false)}
+              aria-label="Close"
+              style={{
+                position: 'absolute',
+                top: 16,
+                right: 16,
+                background: 'none',
+                border: 'none',
+                color: '#e5e7eb',
+                fontSize: 22,
+                cursor: 'pointer',
+              }}
+            >
+              ×
+            </button>
+
             <div
               className="title"
               style={{
@@ -276,23 +432,40 @@ export default function App() {
                 marginBottom: 28,
               }}
             >
-              Sign up for free and we’ll donate your first 1,000 grains of rice instantly – then
-              track your sessions, see your total grow, and join thousands meditating worldwide.
+              Sign up for free and we’ll donate your first 1,000 grains of rice
+              instantly – then track your sessions, see your total grow, and
+              join thousands meditating worldwide.
             </p>
 
-            <div style={{ display: 'grid', placeItems: 'center', gap: 8 }}>
+            {/* primary + login buttons side-by-side */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'center',
+                gap: 12,
+                marginBottom: 12,
+                flexWrap: 'wrap',
+              }}
+            >
               <button
                 type="button"
                 className="btn-primary btn-lg"
-                onClick={() => {
-                  setShowSignup(false)
-                  setAuthMode('signup')
-                  setShowAuth(true)
-                }}
+                onClick={() => openAuthWithHuman('signup')}
               >
                 Sign up for free
               </button>
 
+              <button
+                type="button"
+                className="btn-secondary btn-lg"
+                onClick={() => openAuthWithHuman('login')}
+                style={{ minWidth: 200 }}
+              >
+                Log in
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', placeItems: 'center' }}>
               <button
                 className="signup-later"
                 type="button"
@@ -305,11 +478,116 @@ export default function App() {
                   textDecoration: 'underline',
                   cursor: 'pointer',
                   opacity: 0.85,
+                  marginTop: 4,
                 }}
               >
                 Maybe later
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 1b) SIMPLE HUMAN CONFIRMATION MODAL */}
+      {showHumanCheck && (
+        <div
+          className="signup-backdrop"
+          onClick={() => setShowHumanCheck(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.6)',
+            display: 'grid',
+            placeItems: 'center',
+            zIndex: 55,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: 480,
+              width: '90%',
+              background: 'rgba(15,23,42,0.98)',
+              borderRadius: 18,
+              padding: '28px 28px 24px',
+              border: '1px solid rgba(255,255,255,0.14)',
+              boxShadow: '0 18px 50px rgba(0,0,0,0.6)',
+              boxSizing: 'border-box',
+              textAlign: 'center',
+              position: 'relative',
+            }}
+          >
+            {/* X close */}
+            <button
+              type="button"
+              onClick={() => setShowHumanCheck(false)}
+              aria-label="Close"
+              style={{
+                position: 'absolute',
+                top: 14,
+                right: 16,
+                background: 'none',
+                border: 'none',
+                color: '#e5e7eb',
+                fontSize: 22,
+                cursor: 'pointer',
+              }}
+            >
+              ×
+            </button>
+
+            <div
+              className="title"
+              style={{ fontSize: 26, fontWeight: 600, marginBottom: 12 }}
+            >
+              Before we continue...
+            </div>
+            <p
+              className="subtitle"
+              style={{
+                fontSize: 14,
+                lineHeight: 1.5,
+                marginBottom: 18,
+              }}
+            >
+              Please tick the box below to confirm you are a human (and not a bot).
+            </p>
+
+            <label
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '10px 14px',
+                borderRadius: 12,
+                border: '1px solid rgba(148,163,184,0.9)',
+                background: '#020617',
+                cursor: 'pointer',
+                marginBottom: 20,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={humanChecked}
+                onChange={(e) => setHumanChecked(e.target.checked)}
+                style={{ width: 18, height: 18 }}
+              />
+              <span>I’m human</span>
+            </label>
+
+            <button
+              type="button"
+              className="btn-primary btn-lg"
+              disabled={!humanChecked}
+              onClick={proceedFromHumanCheck}
+              style={{
+                opacity: humanChecked ? 1 : 0.6,
+                cursor: humanChecked ? 'pointer' : 'default',
+                minWidth: 200,
+              }}
+            >
+              Continue
+            </button>
           </div>
         </div>
       )}
@@ -340,8 +618,28 @@ export default function App() {
               border: '1px solid rgba(255,255,255,0.14)',
               boxShadow: '0 18px 50px rgba(0,0,0,0.6)',
               boxSizing: 'border-box',
+              position: 'relative',
             }}
           >
+            {/* X close */}
+            <button
+              type="button"
+              onClick={() => setShowAuth(false)}
+              aria-label="Close"
+              style={{
+                position: 'absolute',
+                top: 16,
+                right: 16,
+                background: 'none',
+                border: 'none',
+                color: '#e5e7eb',
+                fontSize: 22,
+                cursor: 'pointer',
+              }}
+            >
+              ×
+            </button>
+
             {/* Header: title + switch link */}
             <div style={{ marginBottom: 12 }}>
               <div
@@ -356,7 +654,7 @@ export default function App() {
                 {authMode === 'signup'
                   ? 'Create your Satorio account'
                   : authMode === 'login'
-                  ? 'Welcome back'
+                  ? 'Log into your account'
                   : 'Reset your password'}
               </div>
 
@@ -369,7 +667,10 @@ export default function App() {
                     Already have an account?{' '}
                     <button
                       type="button"
-                      onClick={() => setAuthMode('login')}
+                      onClick={() => {
+                        resetErrors();
+                        setAuthMode('login');
+                      }}
                       style={{
                         background: 'none',
                         border: 'none',
@@ -388,10 +689,13 @@ export default function App() {
 
                 {authMode === 'login' && (
                   <>
-                    Need an account?{' '}
+                    Don’t have an account?{' '}
                     <button
                       type="button"
-                      onClick={() => setAuthMode('signup')}
+                      onClick={() => {
+                        resetErrors();
+                        setAuthMode('signup');
+                      }}
                       style={{
                         background: 'none',
                         border: 'none',
@@ -413,7 +717,10 @@ export default function App() {
                     Remembered your password?{' '}
                     <button
                       type="button"
-                      onClick={() => setAuthMode('login')}
+                      onClick={() => {
+                        resetErrors();
+                        setAuthMode('login');
+                      }}
                       style={{
                         background: 'none',
                         border: 'none',
@@ -432,7 +739,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Error message (if any) */}
+            {/* Top-level auth error (Supabase etc.) */}
             {authError && (
               <div
                 style={{
@@ -460,7 +767,10 @@ export default function App() {
                 }}
               >
                 {/* First name */}
-                <div className="auth-input-row" style={{ width: '100%' }}>
+                <div
+                  className="auth-input-row"
+                  style={{ width: '100%', maxWidth: 380 }}
+                >
                   <input
                     className="auth-input"
                     type="text"
@@ -468,11 +778,30 @@ export default function App() {
                     placeholder="First name *"
                     value={firstName}
                     onChange={(e) => setFirstName(e.target.value)}
+                    style={{
+                      borderColor: fieldErrors.firstName
+                        ? '#fb7185'
+                        : undefined,
+                    }}
                   />
+                  {fieldErrors.firstName && (
+                    <div
+                      style={{
+                        color: '#fb7185',
+                        fontSize: 12,
+                        marginTop: 4,
+                      }}
+                    >
+                      {fieldErrors.firstName}
+                    </div>
+                  )}
                 </div>
 
                 {/* Email */}
-                <div className="auth-input-row" style={{ width: '100%' }}>
+                <div
+                  className="auth-input-row"
+                  style={{ width: '100%', maxWidth: 380 }}
+                >
                   <input
                     className="auth-input"
                     type="email"
@@ -480,21 +809,42 @@ export default function App() {
                     placeholder="Email *"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    style={{
+                      borderColor: fieldErrors.email ? '#fb7185' : undefined,
+                    }}
                   />
+                  {fieldErrors.email && (
+                    <div
+                      style={{
+                        color: '#fb7185',
+                        fontSize: 12,
+                        marginTop: 4,
+                      }}
+                    >
+                      {fieldErrors.email}
+                    </div>
+                  )}
                 </div>
 
                 {/* Password + eye */}
                 <div
                   className="auth-input-row auth-password-row"
-                  style={{ width: '100%', position: 'relative' }}
+                  style={{
+                    width: '100%',
+                    maxWidth: 380,
+                    position: 'relative',
+                  }}
                 >
                   <input
                     className="auth-input auth-password-input"
                     type={showPassword ? 'text' : 'password'}
                     required
-                    placeholder="Password *"
+                    placeholder="Password (8+ characters) *"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    style={{
+                      borderColor: fieldErrors.password ? '#fb7185' : undefined,
+                    }}
                   />
                   <button
                     type="button"
@@ -504,6 +854,17 @@ export default function App() {
                   >
                     👁
                   </button>
+                  {fieldErrors.password && (
+                    <div
+                      style={{
+                        color: '#fb7185',
+                        fontSize: 12,
+                        marginTop: 4,
+                      }}
+                    >
+                      {fieldErrors.password}
+                    </div>
+                  )}
                 </div>
 
                 {/* Terms checkbox */}
@@ -516,14 +877,17 @@ export default function App() {
                   />
                   <div className="auth-legal-text">
                     I agree to Satorio’s{' '}
-                      <a href="#" style={{ textDecoration: 'underline' }}>
-                        Terms &amp; Conditions
-                      </a>{' '}
-                      and acknowledge the{' '}
-                      <a href="#" style={{ textDecoration: 'underline' }}>
-                        Privacy Policy
-                      </a>
-                      .
+                    <a href="#/terms" style={{ textDecoration: 'underline' }}>
+                      Terms &amp; Conditions
+                    </a>{' '}
+                    and acknowledge the{' '}
+                    <a
+                      href="#/privacy"
+                      style={{ textDecoration: 'underline' }}
+                    >
+                      Privacy Policy
+                    </a>
+                    .
                   </div>
                 </div>
 
@@ -537,19 +901,84 @@ export default function App() {
                     cursor: authLoading ? 'default' : 'pointer',
                   }}
                 >
-                  {authLoading ? 'Signing up…' : 'Sign up'}
+                  {authLoading ? 'Signing up…' : 'Continue'}
                 </button>
 
-                {/* Social icons row (placeholder) */}
-                <div className="auth-social-row">
-                  <button type="button" className="auth-social-btn">
-                    G
+                {/* OR divider */}
+                <div
+                  style={{
+                    marginTop: 10,
+                    marginBottom: 8,
+                    width: '100%',
+                    maxWidth: 380,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    fontSize: 12,
+                    opacity: 0.8,
+                  }}
+                >
+                  <div
+                    style={{
+                      flex: 1,
+                      height: 1,
+                      background: 'rgba(148,163,184,0.5)',
+                    }}
+                  />
+                  <span>OR</span>
+                  <div
+                    style={{
+                      flex: 1,
+                      height: 1,
+                      background: 'rgba(148,163,184,0.5)',
+                    }}
+                  />
+                </div>
+
+                {/* Social icons row */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gap: 8,
+                    width: '100%',
+                    maxWidth: 380,
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => handleSocialLogin('facebook')}
+                    className="auth-social-btn"
+                    style={{
+                      width: '100%',
+                      borderRadius: 999,
+                      fontSize: 14,
+                    }}
+                  >
+                    Continue with Facebook
                   </button>
-                  <button type="button" className="auth-social-btn">
-                    
+                  <button
+                    type="button"
+                    onClick={() => handleSocialLogin('apple')}
+                    className="auth-social-btn"
+                    style={{
+                      width: '100%',
+                      borderRadius: 999,
+                      fontSize: 14,
+                    }}
+                  >
+                    Continue with Apple
                   </button>
-                  <button type="button" className="auth-social-btn">
-                    f
+                  <button
+                    type="button"
+                    onClick={() => handleSocialLogin('google')}
+                    className="auth-social-btn"
+                    style={{
+                      width: '100%',
+                      borderRadius: 999,
+                      fontSize: 14,
+                    }}
+                  >
+                    Continue with Google
                   </button>
                 </div>
               </form>
@@ -566,7 +995,10 @@ export default function App() {
                 }}
               >
                 {/* Email */}
-                <div className="auth-input-row" style={{ width: '100%' }}>
+                <div
+                  className="auth-input-row"
+                  style={{ width: '100%', maxWidth: 380 }}
+                >
                   <input
                     className="auth-input"
                     type="email"
@@ -574,13 +1006,31 @@ export default function App() {
                     placeholder="Email *"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    style={{
+                      borderColor: fieldErrors.email ? '#fb7185' : undefined,
+                    }}
                   />
+                  {fieldErrors.email && (
+                    <div
+                      style={{
+                        color: '#fb7185',
+                        fontSize: 12,
+                        marginTop: 4,
+                      }}
+                    >
+                      {fieldErrors.email}
+                    </div>
+                  )}
                 </div>
 
                 {/* Password + eye */}
                 <div
                   className="auth-input-row auth-password-row"
-                  style={{ width: '100%', position: 'relative' }}
+                  style={{
+                    width: '100%',
+                    maxWidth: 380,
+                    position: 'relative',
+                  }}
                 >
                   <input
                     className="auth-input auth-password-input"
@@ -589,6 +1039,9 @@ export default function App() {
                     placeholder="Password *"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    style={{
+                      borderColor: fieldErrors.password ? '#fb7185' : undefined,
+                    }}
                   />
                   <button
                     type="button"
@@ -598,6 +1051,17 @@ export default function App() {
                   >
                     👁
                   </button>
+                  {fieldErrors.password && (
+                    <div
+                      style={{
+                        color: '#fb7185',
+                        fontSize: 12,
+                        marginTop: 4,
+                      }}
+                    >
+                      {fieldErrors.password}
+                    </div>
+                  )}
                 </div>
 
                 {/* Forgot password link */}
@@ -612,7 +1076,10 @@ export default function App() {
                 >
                   <button
                     type="button"
-                    onClick={() => setAuthMode('reset')}
+                    onClick={() => {
+                      resetErrors();
+                      setAuthMode('reset');
+                    }}
                     style={{
                       background: 'none',
                       border: 'none',
@@ -637,20 +1104,106 @@ export default function App() {
                     cursor: authLoading ? 'default' : 'pointer',
                   }}
                 >
-                  {authLoading ? 'Logging in…' : 'Log in'}
+                  {authLoading ? 'Logging in…' : 'Continue'}
                 </button>
 
-                {/* Social icons row (placeholder) */}
-                <div className="auth-social-row">
-                  <button type="button" className="auth-social-btn">
-                    G
+                {/* OR divider */}
+                <div
+                  style={{
+                    marginTop: 10,
+                    marginBottom: 8,
+                    width: '100%',
+                    maxWidth: 380,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    fontSize: 12,
+                    opacity: 0.8,
+                  }}
+                >
+                  <div
+                    style={{
+                      flex: 1,
+                      height: 1,
+                      background: 'rgba(148,163,184,0.5)',
+                    }}
+                  />
+                  <span>OR</span>
+                  <div
+                    style={{
+                      flex: 1,
+                      height: 1,
+                      background: 'rgba(148,163,184,0.5)',
+                    }}
+                  />
+                </div>
+
+                {/* Social icons row */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gap: 8,
+                    width: '100%',
+                    maxWidth: 380,
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => handleSocialLogin('facebook')}
+                    className="auth-social-btn"
+                    style={{
+                      width: '100%',
+                      borderRadius: 999,
+                      fontSize: 14,
+                    }}
+                  >
+                    Continue with Facebook
                   </button>
-                  <button type="button" className="auth-social-btn">
-                    
+                  <button
+                    type="button"
+                    onClick={() => handleSocialLogin('apple')}
+                    className="auth-social-btn"
+                    style={{
+                      width: '100%',
+                      borderRadius: 999,
+                      fontSize: 14,
+                    }}
+                  >
+                    Continue with Apple
                   </button>
-                  <button type="button" className="auth-social-btn">
-                    f
+                  <button
+                    type="button"
+                    onClick={() => handleSocialLogin('google')}
+                    className="auth-social-btn"
+                    style={{
+                      width: '100%',
+                      borderRadius: 999,
+                      fontSize: 14,
+                    }}
+                  >
+                    Continue with Google
                   </button>
+                </div>
+
+                {/* Terms text under buttons */}
+                <div
+                  style={{
+                    maxWidth: 420,
+                    fontSize: 11,
+                    textAlign: 'center',
+                    marginTop: 10,
+                    opacity: 0.8,
+                  }}
+                >
+                  By clicking Continue, you agree to our{' '}
+                  <a href="#/terms" style={{ textDecoration: 'underline' }}>
+                    Terms
+                  </a>{' '}
+                  and acknowledge that you have read our{' '}
+                  <a href="#/privacy" style={{ textDecoration: 'underline' }}>
+                    Privacy Policy
+                  </a>
+                  .
                 </div>
               </form>
             ) : (
@@ -674,12 +1227,15 @@ export default function App() {
                     opacity: 0.9,
                   }}
                 >
-                  Enter the email you signed up with and we’ll send you a link to reset your
-                  password.
+                  Enter the email you signed up with and we’ll send you a link to
+                  reset your password.
                 </div>
 
                 {/* Email only */}
-                <div className="auth-input-row" style={{ width: '100%' }}>
+                <div
+                  className="auth-input-row"
+                  style={{ width: '100%', maxWidth: 380 }}
+                >
                   <input
                     className="auth-input"
                     type="email"
@@ -687,7 +1243,21 @@ export default function App() {
                     placeholder="Email *"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    style={{
+                      borderColor: fieldErrors.email ? '#fb7185' : undefined,
+                    }}
                   />
+                  {fieldErrors.email && (
+                    <div
+                      style={{
+                        color: '#fb7185',
+                        fontSize: 12,
+                        marginTop: 4,
+                      }}
+                    >
+                      {fieldErrors.email}
+                    </div>
+                  )}
                 </div>
 
                 {/* Send reset link */}
@@ -708,12 +1278,102 @@ export default function App() {
         </div>
       )}
 
- 
-          <BuyMeACoffeeButton />
+      {/* 3) THANKS FOR CONFIRMING POPUP (email confirmed) */}
+      {route === 'email-confirmed' && (
+        <div
+          className="signup-backdrop"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.6)',
+            display: 'grid',
+            placeItems: 'center',
+            zIndex: 65,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: 480,
+              width: '90%',
+              background: 'rgba(15,23,42,0.98)',
+              borderRadius: 18,
+              padding: '28px 28px 24px',
+              border: '1px solid rgba(255,255,255,0.14)',
+              boxShadow: '0 18px 50px rgba(0,0,0,0.6)',
+              boxSizing: 'border-box',
+              textAlign: 'center',
+              position: 'relative',
+            }}
+          >
+            {/* X close */}
+            <button
+              type="button"
+              onClick={() => nav('home')}
+              aria-label="Close"
+              style={{
+                position: 'absolute',
+                top: 14,
+                right: 16,
+                background: 'none',
+                border: 'none',
+                color: '#e5e7eb',
+                fontSize: 22,
+                cursor: 'pointer',
+              }}
+            >
+              ×
+            </button>
 
+            <div
+              className="title"
+              style={{ fontSize: 26, fontWeight: 600, marginBottom: 12 }}
+            >
+              Thanks for confirming ✨
+            </div>
 
-      <div className="footer">© {new Date().getFullYear()} Meditation Timer</div>
+            <p
+              className="subtitle"
+              style={{
+                fontSize: 14,
+                lineHeight: 1.5,
+                marginBottom: 18,
+              }}
+            >
+              Your email has been verified. You can now access your profile and
+              track your meditation sessions.
+            </p>
+
+            <div
+              style={{
+                display: 'grid',
+                gap: 10,
+                marginTop: 8,
+              }}
+            >
+              <button
+                type="button"
+                className="btn-primary btn-lg"
+                onClick={() => nav('profile')}
+              >
+                Go to your profile
+              </button>
+              <button
+                type="button"
+                className="btn-secondary btn-lg"
+                onClick={() => nav('home')}
+              >
+                Back to Home
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <BuyMeACoffeeButton />
+
+      <div className="footer">© {new Date().getFullYear()} Satorio.co</div>
     </>
-  )
+  );
 }
 
